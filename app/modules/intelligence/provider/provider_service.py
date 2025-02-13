@@ -9,6 +9,8 @@ from langchain_deepseek import ChatDeepSeek
 from langchain_openai.chat_models import ChatOpenAI
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
+from .ollama_provider import OllamaProvider
+
 from app.modules.key_management.secret_manager import SecretManager
 from app.modules.users.user_preferences_model import UserPreferences
 from app.modules.utils.posthog_helper import PostHogClient
@@ -45,6 +47,11 @@ class ProviderService:
                 id="anthropic",
                 name="Anthropic",
                 description="An AI safety-focused company known for models like Claude.",
+            ),
+            ProviderInfo(
+                id="ollama",
+                name="Ollama",
+                description="Open-source LLM provider for running models locally.",
             ),
             ProviderInfo(
                 id="deepseek",
@@ -134,6 +141,22 @@ class ProviderService:
                 },
             },
         },
+        "ollama": {
+            "small": {
+                "crewai": {"model": "ollama/llama2"},
+                "langchain": {
+                    "model": "llama2",
+                    "class": OllamaProvider,
+                },
+            },
+            "large": {
+                "crewai": {"model": "ollama/llama2"},
+                "langchain": {
+                    "model": "llama2",
+                    "class": OllamaProvider,
+                },
+            },
+        },
     }
 
     def _get_provider_config(self, size: str) -> str:
@@ -204,6 +227,14 @@ class ProviderService:
                     "api_base": self.openrouter_base_url,
                 }
             )
+        
+        if provider == "ollama":
+            common_params.update(
+                {
+                    "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+                    "max_tokens": 4096,
+                }
+            )
 
         if provider == "anthropic":
             common_params.update(
@@ -253,6 +284,8 @@ class ProviderService:
             return "Anthropic"
         elif isinstance(llm, ChatDeepSeek):
             return "DeepSeek"
+        elif isinstance(llm, OllamaProvider):
+            return "Ollama"
         elif isinstance(llm, LLM):
             if llm.model.split("/")[0] == "openai":
                 return "OpenAI"
@@ -260,6 +293,8 @@ class ProviderService:
                 return "Anthropic"
             elif llm.model.split("/")[0] == "deepseek":
                 return "DeepSeek"
+            elif llm.model.split("/")[0] == "ollama":
+                return "Ollama"
         return "Unknown"
 
     async def get_global_ai_provider(self, user_id: str) -> str:
