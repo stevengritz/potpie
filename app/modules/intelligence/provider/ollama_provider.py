@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 class OllamaConfig(BaseModel):
     """Configuration for Ollama LLM."""
     base_url: str = Field(default="http://localhost:11434")
-    model: str = Field(default="llama2")
+    model: str = Field(default="deepseek-r1:7b")
     temperature: float = Field(default=0.7)
     max_tokens: int = Field(default=2048)
     context_window: int = Field(default=4096)
@@ -18,23 +18,35 @@ class OllamaConfig(BaseModel):
 class OllamaProvider(LLM):
     """LangChain integration for Ollama models."""
     
-    config: OllamaConfig
-    client: Optional[object] = None
-
     def __init__(
         self,
-        config: Optional[Dict] = None,
+        base_url: str = "http://localhost:11434",
+        model: str = "deepseek-r1:7b",
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+        context_window: int = 4096,
         **kwargs
     ):
         """Initialize Ollama provider with optional config."""
-        config = config or {}
-        self.config = OllamaConfig(**config)
         super().__init__(**kwargs)
+        self._config = OllamaConfig(
+            base_url=base_url,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            context_window=context_window
+        )
 
     @property
     def _llm_type(self) -> str:
         """Return type of LLM."""
         return "ollama"
+
+    def _ensure_protocol(self, url: str) -> str:
+        """Ensure URL has proper protocol."""
+        if not url.startswith(('http://', 'https://')):
+            return f'http://{url}'
+        return url
 
     def _call(
         self,
@@ -46,11 +58,11 @@ class OllamaProvider(LLM):
         """Execute the LLM call using litellm."""
         try:
             response = completion(
-                model=f"ollama/{self.config.model}",
+                model=f"ollama/{self._config.model}",
                 messages=[{"role": "user", "content": prompt}],
-                api_base=self.config.base_url,
-                temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
+                api_base=self._ensure_protocol(self._config.base_url),
+                temperature=self._config.temperature,
+                max_tokens=self._config.max_tokens,
                 stop=stop,
                 **kwargs
             )
@@ -62,9 +74,9 @@ class OllamaProvider(LLM):
     def _identifying_params(self) -> Dict[str, any]:
         """Get the identifying parameters."""
         return {
-            "model": self.config.model,
-            "base_url": self.config.base_url,
-            "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens,
-            "context_window": self.config.context_window,
+            "model": self._config.model,
+            "base_url": self._config.base_url,
+            "temperature": self._config.temperature,
+            "max_tokens": self._config.max_tokens,
+            "context_window": self._config.context_window,
         }

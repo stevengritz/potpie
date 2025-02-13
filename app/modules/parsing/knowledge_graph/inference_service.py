@@ -1,6 +1,8 @@
+import os
+os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
+
 import asyncio
 import logging
-import os
 import re
 from typing import Dict, List, Optional
 
@@ -36,7 +38,7 @@ class InferenceService:
         self.llm = ProviderService(db, user_id).get_small_llm(
             agent_type=AgentType.LANGCHAIN
         )
-        self.embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+        self.embedding_model = SentenceTransformer("all-MiniLM-L6-v2", device='cpu')
         self.search_service = SearchService(db)
         self.project_manager = ProjectService(db)
         self.parallel_requests = int(os.getenv("PARALLEL_REQUESTS", 50))

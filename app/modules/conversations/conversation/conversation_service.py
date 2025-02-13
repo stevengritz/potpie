@@ -178,7 +178,10 @@ class SimplifiedAgentSupervisor:
         )
 
         response = await self.llm.ainvoke(prompt)
-        response = response.content.strip("`")
+        # Handle both string and message object responses
+        if hasattr(response, 'content'):
+            response = response.content
+        response = response.strip("`")
         try:
             agent_id, confidence = response.split("|")
             confidence = float(confidence)

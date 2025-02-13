@@ -229,10 +229,14 @@ class ProviderService:
             )
         
         if provider == "ollama":
+            base_url = os.getenv("OLLAMA_BASE_URL", "localhost:11434")
+            if not base_url.startswith(("http://", "https://")):
+                base_url = f"http://{base_url}"
             common_params.update(
                 {
-                    "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+                    "base_url": base_url,
                     "max_tokens": 4096,
+                    "model": config["langchain"]["model"]
                 }
             )
 
@@ -247,7 +251,9 @@ class ProviderService:
             return LLM(model=config["crewai"]["model"], **common_params)
         else:
             model_class = config["langchain"]["class"]
-            model_params = {"model_name": config["langchain"]["model"], **common_params}
+            model_params = common_params.copy()
+            if provider != "ollama":
+                model_params["model_name"] = config["langchain"]["model"]
 
             if not os.getenv("isDevelopmentMode") == "enabled":
                 model_params.update(
