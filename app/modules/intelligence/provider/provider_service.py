@@ -7,9 +7,9 @@ from crewai import LLM
 from langchain_anthropic import ChatAnthropic
 from langchain_deepseek import ChatDeepSeek
 from langchain_openai.chat_models import ChatOpenAI
+from langchain_ollama import ChatOllama
 from portkey_ai import PORTKEY_GATEWAY_URL, createHeaders
 
-from .ollama_provider import OllamaProvider
 
 from app.modules.key_management.secret_manager import SecretManager
 from app.modules.users.user_preferences_model import UserPreferences
@@ -143,17 +143,17 @@ class ProviderService:
         },
         "ollama": {
             "small": {
-                "crewai": {"model": "ollama/llama2"},
+                "crewai": {"model": "ollama_chat/deepseek-r1:7b"},  # No ollama/ prefix needed
                 "langchain": {
-                    "model": "llama2",
-                    "class": OllamaProvider,
+                    "model": "deepseek-r1:7b",
+                    "class": ChatOllama,
                 },
             },
             "large": {
-                "crewai": {"model": "ollama/llama2"},
+                "crewai": {"model": "ollama_chat/deepseek-r1:7b"},  # No ollama/ prefix needed
                 "langchain": {
-                    "model": "llama2",
-                    "class": OllamaProvider,
+                    "model": "deepseek-r1:7b",
+                    "class": ChatOllama,
                 },
             },
         },
@@ -229,16 +229,52 @@ class ProviderService:
             )
         
         if provider == "ollama":
-            base_url = os.getenv("OLLAMA_BASE_URL", "localhost:11434")
-            if not base_url.startswith(("http://", "https://")):
-                base_url = f"http://{base_url}"
-            common_params.update(
-                {
-                    "base_url": base_url,
+            try:
+                base_url = os.getenv("OLLAMA_BASE_URL", "localhost:11434")
+                if not base_url.startswith(("http://", "https://")):
+                    base_url = f"http://{base_url}"
+                
+                # Get base model name without prefix
+                model_name = config["crewai" if agent_type == AgentType.CREWAI else "langchain"]["model"]
+                
+                # Set common Ollama parameters with explicit configuration
+                common_params.update({
+                    "temperature": 0.3,
                     "max_tokens": 4096,
-                    "model": config["langchain"]["model"]
-                }
-            )
+                    "stop": None,
+                    "top_k": 50,
+                    "top_p": 0.9,
+                    "repeat_penalty": 1.1,
+                    "seed": None,
+                })
+                
+                if agent_type == AgentType.CREWAI:
+                    # For CrewAI, we need to set the parameters in a way that CrewAI expects
+                    common_params = {
+                        "api_base": base_url,
+                        "model": model_name,  # For Ollama, don't use the prefix
+                        "provider": "ollama",  # Explicitly set provider to ollama
+                        "config": {
+                            "temperature": 0.3,
+                            "max_tokens": 4096,
+                            "stop": None,
+                            "top_k": 50,
+                            "top_p": 0.9,
+                            "repeat_penalty": 1.1,
+                            "seed": None,
+                        }
+                    }
+                else:
+                    # For LangChain, we use ChatOllama with base URL
+                    common_params.update({
+                        "base_url": base_url,  # ChatOllama uses base_url
+                        "model": model_name,    # ChatOllama doesn't need ollama/ prefix
+                    })
+                
+                logging.info(f"Initializing Ollama with model {model_name} at {base_url} for {agent_type}")
+            except Exception as e:
+                logging.error(f"Error initializing Ollama: {str(e)}")
+                raise
 
         if provider == "anthropic":
             common_params.update(
@@ -248,12 +284,19 @@ class ProviderService:
             )
 
         if agent_type == AgentType.CREWAI:
-            return LLM(model=config["crewai"]["model"], **common_params)
-        else:
-            model_class = config["langchain"]["class"]
-            model_params = common_params.copy()
             if provider != "ollama":
-                model_params["model_name"] = config["langchain"]["model"]
+                # For non-Ollama providers in CrewAI
+                common_params["model"] = config["crewai"]["model"]
+            return LLM(**common_params)
+        else:  # LangChain
+            model_class = config["langchain"]["class"]
+            if provider == "ollama":
+                # For LangChain Ollama, we use ChatOllama with the params we set
+                return model_class(**common_params)
+            else:
+                # For other providers in LangChain
+                common_params["model"] = config["langchain"]["model"]
+                return model_class(**common_params)
 
             if not os.getenv("isDevelopmentMode") == "enabled":
                 model_params.update(
@@ -290,7 +333,7 @@ class ProviderService:
             return "Anthropic"
         elif isinstance(llm, ChatDeepSeek):
             return "DeepSeek"
-        elif isinstance(llm, OllamaProvider):
+        elif isinstance(llm, ChatOllama):
             return "Ollama"
         elif isinstance(llm, LLM):
             if llm.model.split("/")[0] == "openai":

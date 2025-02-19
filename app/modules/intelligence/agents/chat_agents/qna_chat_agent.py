@@ -169,6 +169,8 @@ class QNAChatAgent:
             tool_results = []
             citations = []
             if classification == ClassificationResult.AGENT_REQUIRED:
+                # Initialize buffer for accumulating response
+                response_buffer = ""
                 async for chunk in kickoff_rag_agent(
                     query,
                     project_id,
@@ -183,21 +185,45 @@ class QNAChatAgent:
                     self.mini_llm,
                     user_id,
                 ):
-                    content = str(chunk)
+                    try:
+                        content = str(chunk) if chunk else ""
+                        if not content.strip():
+                            continue
 
-                    self.history_manager.add_message_chunk(
-                        conversation_id,
-                        content,
-                        MessageType.AI_GENERATED,
-                        citations=citations,
-                    )
+                        # Try to parse the chunk as JSON
+                        try:
+                            parsed_json = json.loads(content)
+                            if isinstance(parsed_json, dict) and "Answer" in parsed_json:
+                                content = parsed_json["Answer"]
+                                if "Citations" in parsed_json:
+                                    citations = parsed_json["Citations"]
+                        except json.JSONDecodeError:
+                            # If not JSON, use the content as is
+                            pass
 
-                    yield json.dumps(
-                        {
+                        # Add to response buffer
+                        response_buffer += content
+
+                        # Add meaningful chunks to history
+                        if content.strip():
+                            self.history_manager.add_message_chunk(
+                                conversation_id,
+                                content,
+                                MessageType.AI_GENERATED,
+                                citations=citations,
+                            )
+
+                        # Yield the accumulated response
+                        yield json.dumps({
                             "citations": citations,
-                            "message": content,
-                        }
-                    )
+                            "message": response_buffer
+                        })
+                    except Exception as e:
+                        logger.error(f"Error processing chunk: {str(e)}", exc_info=True)
+                        yield json.dumps({
+                            "citations": [],
+                            "message": f"Error processing response: {str(e)}"
+                        })
 
                 self.history_manager.flush_message_buffer(
                     conversation_id, MessageType.AI_GENERATED
@@ -257,4 +283,8 @@ class QNAChatAgent:
 
         except Exception as e:
             logger.error(f"Error during QNAChatAgent run: {str(e)}", exc_info=True)
-            yield f"An error occurred: {str(e)}"
+            error_message = f"An error occurred: {str(e)}"
+            yield json.dumps({
+                "message": error_message,
+                "citations": []
+            })

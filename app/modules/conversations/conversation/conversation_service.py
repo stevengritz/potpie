@@ -40,6 +40,9 @@ from app.modules.intelligence.agents.agents_service import AgentsService
 from app.modules.intelligence.agents.custom_agents.custom_agents_service import (
     CustomAgentsService,
 )
+from app.modules.intelligence.agents.chat_agents.jira_test_chat_agent import (
+    JiraTestChatAgent,
+)
 from app.modules.intelligence.memory.chat_history_service import ChatHistoryService
 from app.modules.intelligence.provider.provider_service import (
     AgentType,
@@ -82,12 +85,13 @@ class SimplifiedAgentSupervisor:
         self.agents_service = AgentsService(db)
         self.agent_factory = AgentFactory(db, provider_service)
         self.available_agents = []
+        self.agent_type = AgentType.LANGCHAIN  # Default to LANGCHAIN for classifier
 
     async def initialize(self, user_id: str):
         self.available_agents = await self.agents_service.list_available_agents(
             current_user={"user_id": user_id}, list_system_agents=True
         )
-        self.llm = self.provider_service.get_small_llm(user_id)
+        self.llm = self.provider_service.get_small_llm(self.agent_type)
         self.classifier_prompt = """
         Given the user query and the current agent ID, select the most appropriate agent by comparing the query’s requirements with each agent’s specialties.
 
@@ -228,7 +232,19 @@ class SimplifiedAgentSupervisor:
                 node_ids=state["node_ids"],
             ):
                 if isinstance(chunk, str):
-                    writer(chunk)
+                    try:
+                        # Try to parse as JSON first
+                        response = json.loads(chunk)
+                        writer(json.dumps({
+                            'message': response.get('message', ''),
+                            'citations': response.get('citations', [])
+                        }))
+                    except json.JSONDecodeError:
+                        # If not JSON, wrap as JSON
+                        writer(json.dumps({
+                            'message': chunk,
+                            'citations': []
+                        }))
         except Exception as e:
             logger.error(f"Error in agent execution: {e}")
             writer("An error occurred while processing your request")
@@ -688,11 +704,15 @@ class ConversationService:
             ) from e
 
     def parse_str_to_message(self, chunk: str) -> ChatMessageResponse:
+        if not chunk or not chunk.strip():
+            return ChatMessageResponse(message="", citations=[])
+            
         try:
             data = json.loads(chunk)
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse chunk as JSON: {e}")
-            raise ConversationServiceError("Failed to parse AI response") from e
+            logger.error(f"Failed to parse chunk as JSON: {e}, chunk content: {chunk!r}")
+            # Return empty response instead of raising error
+            return ChatMessageResponse(message="", citations=[])
 
         # Extract the 'message' and 'citations'
         message: str = data.get("message", "")
@@ -732,6 +752,10 @@ class ConversationService:
                     agent_id, query, project_id, user_id, conversation.id, node_ids
                 )
                 yield self.parse_str_to_message(response)
+            elif isinstance(agent, JiraTestChatAgent):
+                # Jira agent now supports streaming
+                async for chunk in agent.run(query, project_id, node_ids):
+                    yield self.parse_str_to_message(chunk)
             else:
                 # For other agents that support streaming
                 async for chunk in supervisor.process_query(

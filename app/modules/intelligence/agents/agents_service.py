@@ -61,6 +61,12 @@ class AgentsService:
                 description="An agent specialized in generating code for new features or fixing bugs.",
                 status="SYSTEM",
             ),
+            AgentInfo(
+                id="jira_test_agent",
+                name="Jira Test Case Agent",
+                description="An agent specialized in analyzing code changes and generating structured, Jira-style test cases.",
+                status="SYSTEM",
+            ),
         ]
 
         try:

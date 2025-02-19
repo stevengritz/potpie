@@ -20,6 +20,7 @@ from app.modules.intelligence.agents.chat_agents.qna_chat_agent import QNAChatAg
 from app.modules.intelligence.agents.chat_agents.unit_test_chat_agent import (
     UnitTestAgent,
 )
+from app.modules.intelligence.agents.chat_agents.jira_test_chat_agent import JiraTestChatAgent
 from app.modules.intelligence.agents.custom_agents.custom_agent import CustomAgent
 from app.modules.intelligence.agents.custom_agents.custom_agents_service import (
     CustomAgentsService,
@@ -37,8 +38,8 @@ class AgentInjectorService:
         self.sql_db = db
         self.provider_service = provider_service
         self.custom_agent_service = CustomAgentsService()
-        self.agents = self._initialize_agents()
         self.user_id = user_id
+        self.agents = self._initialize_agents()
 
     def _initialize_agents(self) -> Dict[str, Any]:
         mini_llm = self.provider_service.get_small_llm(agent_type=AgentType.LANGCHAIN)
@@ -57,6 +58,9 @@ class AgentInjectorService:
             ),
             "LLD_agent": LLDChatAgent(mini_llm, reasoning_llm, self.sql_db),
             "code_generation_agent": CodeGenerationChatAgent(
+                mini_llm, reasoning_llm, self.sql_db
+            ),
+            "jira_test_agent": JiraTestChatAgent(
                 mini_llm, reasoning_llm, self.sql_db
             ),
         }

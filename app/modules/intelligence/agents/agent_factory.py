@@ -19,6 +19,9 @@ from app.modules.intelligence.agents.chat_agents.qna_chat_agent import QNAChatAg
 from app.modules.intelligence.agents.chat_agents.unit_test_chat_agent import (
     UnitTestAgent,
 )
+from app.modules.intelligence.agents.chat_agents.jira_test_chat_agent import (
+    JiraTestChatAgent,
+)
 from app.modules.intelligence.agents.custom_agents.custom_agent import CustomAgent
 from app.modules.intelligence.provider.provider_service import (
     AgentType,
@@ -68,6 +71,9 @@ class AgentFactory:
             ),
             "LLD_agent": lambda: LLDChatAgent(mini_llm, reasoning_llm, self.db),
             "code_generation_agent": lambda: CodeGenerationChatAgent(
+                mini_llm, reasoning_llm, self.db
+            ),
+            "jira_test_agent": lambda: JiraTestChatAgent(
                 mini_llm, reasoning_llm, self.db
             ),
         }
